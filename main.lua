@@ -163,7 +163,7 @@ if isTargetGame and userTycoon then
     MainGroup:AddToggle('AutoFruit', {
         Text = 'Auto Collect Fruit',
         Default = false,
-        Tooltip = 'Automatically collects fruits from lemon trees',
+        Tooltip = 'Automatically collects fruits from lemon trees (invisible teleport)',
         Callback = function(Value)
             AutoFruit = Value
             Notify('Auto Fruit', Value and 'Enabled ✓' or 'Disabled ✗', 3)
@@ -173,8 +173,6 @@ if isTargetGame and userTycoon then
     MainGroup:AddDivider()
     MainGroup:AddLabel('✅ Status: Running - Sell Lemons Mode')
     MainGroup:AddLabel('Tycoon: ' .. userTycoon.Name)
-    
-    -- Add lemon count display
     MainGroup:AddLabel('🍋 Sell lemons to earn cash!')
 elseif isTargetGame and not userTycoon then
     MainGroup:AddLabel('⚠️ Tycoon not found!')
@@ -762,7 +760,7 @@ if isTargetGame and userTycoon then
         Buying = false
     end
 
-    -- Auto Sell Lemons Loop (was Auto Buy)
+    -- Auto Sell Lemons Loop
     task.spawn(function()
         while task.wait(0.5) do
             if AutoBuy then
@@ -798,7 +796,7 @@ if isTargetGame and userTycoon then
         end
     end)
 
-    -- Auto Fruit Collection Loop
+    -- Auto Fruit Collection Loop with Invisible Teleport
     local Trees = {}
 
     local function addTree(obj)
@@ -832,20 +830,80 @@ if isTargetGame and userTycoon then
         end
     end
 
-    local function teleportToTree(tree)
+    -- NEW: Invisible teleport function for fruit collection
+    local function invisibleTeleportToTree(tree)
         local character = LocalPlayer.Character
         if not character then return false end
+        
         local hrp = character:FindFirstChild("HumanoidRootPart")
         if not hrp then return false end
-        local cf = tree:GetPivot()
-        hrp.CFrame = cf + Vector3.new(0, 5, 0)
-        return true
+        
+        local treePos = tree:GetPivot()
+        local originalCF = hrp.CFrame
+        
+        -- Store original transparency values
+        local oldTransparency = {}
+        for _, part in ipairs(character:GetDescendants()) do
+            if part:IsA("BasePart") then
+                oldTransparency[part] = part.Transparency
+                part.Transparency = 1
+            end
+        end
+        
+        -- Lock camera
+        local camera = workspace.CurrentCamera
+        local originalCameraCF = camera.CFrame
+        camera.CameraType = Enum.CameraType.Scriptable
+        camera.CFrame = originalCameraCF
+        
+        -- Teleport to tree (server-side)
+        hrp.CFrame = treePos + Vector3.new(0, 5, 0)
+        
+        return true, originalCF, originalCameraCF, oldTransparency, character
     end
 
+    -- NEW: Restore after invisible teleport
+    local function restoreAfterTeleport(originalCF, originalCameraCF, oldTransparency, character)
+        if not character then return end
+        
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            hrp.CFrame = originalCF
+        end
+        
+        -- Restore transparency
+        for part, trans in pairs(oldTransparency) do
+            if part and part.Parent then
+                pcall(function()
+                    part.Transparency = trans
+                end)
+            end
+        end
+        
+        -- Restore camera
+        local camera = workspace.CurrentCamera
+        if camera then
+            pcall(function()
+                camera.CameraType = Enum.CameraType.Custom
+                camera.CFrame = originalCameraCF
+            end)
+        end
+    end
+
+    -- Updated collectFruit function with invisible teleport
     local function collectFruit(tree)
         noCollisionTree(tree)
-        local success = teleportToTree(tree)
+        
+        local character = LocalPlayer.Character
+        if not character then return end
+        
+        local hrp = character:FindFirstChild("HumanoidRootPart")
+        if not hrp then return end
+        
+        local success, originalCF, originalCameraCF, oldTransparency, char = invisibleTeleportToTree(tree)
         if not success then return end
+        
+        -- Collect fruits
         for _, obj in ipairs(tree:GetDescendants()) do
             if obj:IsA("BasePart") and obj.Name == "Fruit" then
                 obj.CanCollide = false
@@ -859,6 +917,9 @@ if isTargetGame and userTycoon then
                 end
             end
         end
+        
+        -- Restore everything (invisible teleport back)
+        restoreAfterTeleport(originalCF, originalCameraCF, oldTransparency, char)
     end
 
     task.spawn(function()
@@ -910,28 +971,12 @@ ThemeManager:ApplyToTab(Tabs['UI Settings'])
 SaveManager:LoadAutoloadConfig()
 
 -- Initial notifications
-Library:Notify({
-    Title = 'LightClient',
-    Content = 'Loaded Successfully! ✓',
-    Duration = 5
-})
+Notify('LightClient', 'Loaded Successfully! ✓', 5)
 
 if isTargetGame and userTycoon then
-    Library:Notify({
-        Title = 'LightClient',
-        Content = '🍋 Sell Lemons Mode Activated!',
-        Duration = 6
-    })
+    Notify('LightClient', '🍋 Sell Lemons Mode Activated!', 6)
 elseif isTargetGame and not userTycoon then
-    Library:Notify({
-        Title = 'LightClient',
-        Content = '⚠️ Tycoon not found! Make sure you have a tycoon.',
-        Duration = 6
-    })
+    Notify('LightClient', '⚠️ Tycoon not found! Make sure you have a tycoon.', 6)
 else
-    Library:Notify({
-        Title = 'LightClient',
-        Content = '⚠️ Not Sell Lemons game - Spoofer & Unlock All available',
-        Duration = 5
-    })
+    Notify('LightClient', '⚠️ Not Sell Lemons game - Spoofer & Unlock All available', 5)
 end
